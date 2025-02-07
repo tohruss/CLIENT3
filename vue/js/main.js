@@ -2,16 +2,21 @@ Vue.component('task-card', {
     props: ['card', 'currentColumnIndex', 'isFirstColumnLocked'],
     template: `
     <div class="task-card">
-        <h3>Задача: {{ card.title }}</h3>
-        <p style="font-style: italic" ><b>Дата создания:</b> {{ card.createdDate }}</p>
-        <p style="font-style: italic" ><b>Дедлайн:</b> {{ card.deadline }}</p>
+        <h2>Задача: {{ card.title }}</h2>
+        <h3>Дата создания:{{ card.createdDate }}</h3>
+        <h3>Дедлайн: {{ card.deadline }}</h3>
+        <h4>Описание задачи:</h4>
         <ul v-if="card.tasks && card.tasks.length > 0">
             <li v-for="(task, index) in card.tasks" :key="index">
                 <p>{{ task.text }}</p>
             </li>
         </ul>
-        <p v-if="card.finalMoved && card.lastUpdated" style="font-weight: bold">Выполнено: {{ card.lastUpdated }}</p>
-        <button class="DELITE" @click="$emit('delete-card', card.id)">Удалить</button>
+        <div>
+            <button  v-if="currentColumnIndex < 2" class="EDIT" @click="$emit('edit-card', card.id)">Редактировать</button>
+            <button v-if="currentColumnIndex === 0" class="DELITE" @click="$emit('delete-card', card.id)">Удалить</button>
+            <button v-if="currentColumnIndex !== 3" @click="moveToNext()">Переместить вперед</button>
+        </div>
+        <h3 v-if="card.finalMoved && card.lastUpdated" style="font-weight: bold">Выполнено: {{ card.lastUpdated }}</h3>
     </div>
     `,
     data() {
@@ -29,6 +34,14 @@ Vue.component('task-card', {
                 this.newTask = '';
                 this.saveTasks();
             }
+        },
+
+        moveToNext() {
+            this.$emit('move-to-next', this.card, this.currentColumnIndex);
+        },
+        removeTask(index) {
+            this.card.tasks.splice(index, 1); // Удаляем задачу по индексу
+            this.saveTasks(); // Сохраняем изменения в localStorage
         },
         saveTasks() {
             const cards = JSON.parse(localStorage.getItem('cards')) || [];
@@ -49,31 +62,7 @@ Vue.component('task-card', {
 
             localStorage.setItem('cards', JSON.stringify(cards));
         },
-        checkCompletion() {
-            if (this.card.tasks) {
-                const totalTasks = this.card.tasks.length;
-                const completedTasks = this.card.tasks.filter(task => task.completed).length;
 
-                if (totalTasks > 0) {
-                    const completionRate = (completedTasks / totalTasks) * 100;
-
-                    // Перемещение карточки вперед
-                    if (completionRate > 50 && completionRate <= 100) {
-                        this.$emit('move-to-next', this.card, this.currentColumnIndex);
-                    } else if (completionRate === 100) {
-                        this.card.lastUpdated = new Date().toLocaleString(); // Установка времени последнего обновления
-                        this.$emit('move-to-next', this.card, this.currentColumnIndex);
-                    }
-
-                    // Перемещение карточки назад
-                    if (completionRate <= 50 && this.currentColumnIndex === 1) {
-                        this.$emit('move-to-previous', this.card, this.currentColumnIndex);
-                    }
-
-                    this.saveTasks();
-                }
-            }
-        }
     },
     mounted() {
         const cards = JSON.parse(localStorage.getItem('cards')) || [];
@@ -101,6 +90,7 @@ Vue.component('column1', {
             @move-to-next="moveToNext"
             @move-to-previous="moveToPrevious"
             @delete-card="$emit('delete-card', $event)"
+            @edit-card="$emit('edit-card', $event)"
         ></task-card>
     </div>
     `,
@@ -126,6 +116,7 @@ Vue.component('column2', {
             :currentColumnIndex="1"
             @move-to-next="moveToNext"
             @move-to-previous="moveToPrevious"
+            @edit-card="$emit('edit-card', $event)"
         ></task-card>
     </div>
     `,
@@ -149,9 +140,18 @@ Vue.component('column3', {
             :key="index" 
             :card="card"
             :currentColumnIndex="2"
+            @move-to-next="moveToNext"
         ></task-card>
     </div>
-    `
+    `,
+    methods: {
+        moveToNext(card, currentColumnIndex) {
+            this.$emit('move-to-next', card, currentColumnIndex);
+        },
+        moveToPrevious(card, currentColumnIndex) {
+            this.$emit('move-to-previous', card, currentColumnIndex);
+        }
+    }
 });
 
 Vue.component('column4', {
@@ -166,7 +166,12 @@ Vue.component('column4', {
             :currentColumnIndex="3"
         ></task-card>
     </div>
-    `
+    `,
+    methods: {
+        moveToPrevious(card, currentColumnIndex) {
+            this.$emit('move-to-previous', card, currentColumnIndex);
+        }
+    }
 });
 
 new Vue({
@@ -180,7 +185,12 @@ new Vue({
             isFirstColumnLocked: false,
             showModal: false,
             newTaskText: '',
-            newCardDeadline: ''
+            newCardDeadline: '',
+            editingCardId: null, // для отслеживания редактируемой карточки
+            editingCardTitle: "", // для сохранения названия редактируемой карточки
+            editingCardDeadline: "", // для сохранения срока действия редактируемой карточки
+            editingCardTasks: [],
+            isEditMode: false
         };
     },
     computed: {
@@ -195,10 +205,11 @@ new Vue({
                 const card = {
                     title: this.newCardTitle,
                     id: Date.now(),
-                    tasks: this.newTasks.map(task => ({ text: task, completed: false })),
+                    tasks: this.newTasks.map(task => ({text: task, completed: false})),
                     moved: false,
                     finalMoved: false,
                     lastUpdated: null,
+                    tested: false,
                     createdDate: new Date().toLocaleString(),
                     deadline: this.newCardDeadline // Добавляем дедлайн
                 };
@@ -215,8 +226,19 @@ new Vue({
         },
         addNewTask() {
             if (this.newTaskText.trim()) {
-                this.newTasks.push(this.newTaskText);
-                this.newTaskText = '';
+                if (this.isEditMode) {
+                    this.editingCardTasks.push(this.newTaskText); // Добавляем новую задачу в массив редактируемой карточки
+                } else {
+                    this.newTasks.push(this.newTaskText); // Добавляем новую задачу в массив новой карточки
+                }
+                this.newTaskText = ''; // Сбрасываем поле ввода
+            }
+        },
+        removeTask(index) {
+            if (this.isEditMode) {
+                this.editingCardTasks.splice(index, 1); // Удаляем задачу по индексу из редактируемого списка
+            } else {
+                this.newTasks.splice(index, 1); // Удаляем задачу по индексу
             }
         },
         saveCards() {
@@ -233,18 +255,19 @@ new Vue({
         moveCardToNext(card, currentColumnIndex) {
             const cardIndex = this.cards.indexOf(card);
 
-            if (cardIndex !== -1 && card.tasks) {
-                const completedTasks = card.tasks.filter(task => task.completed).length;
-                const totalTasks = card.tasks.length;
-
-                if (completedTasks > totalTasks / 2 && currentColumnIndex < 2) {
-                    card.moved = true;
-                    if (completedTasks === totalTasks) {
-                        card.finalMoved = true;
-                        card.lastUpdated = new Date().toLocaleString();
-                    }
-                    this.saveCards();
+            if (cardIndex !== -1 && currentColumnIndex < 3) {
+                // Устанавливаем флаги для карточки в зависимости от колонки
+                if (currentColumnIndex === 0) {
+                    this.cards[cardIndex].moved = true; // Перемещаем в колонку "Задачи в работе"
+                } else if (currentColumnIndex === 1) {
+                    this.cards[cardIndex].tested = true; // Перемещаем в колонку "Тестирование"
+                } else if (currentColumnIndex === 2) {
+                    this.cards[cardIndex].finalMoved = true; // Перемещаем в колонку "Выполненные задачи"
+                    this.cards[cardIndex].lastUpdated = new Date().toLocaleString(); // Устанавливаем дату завершения
                 }
+
+                // Сохраняем изменения
+                this.saveCards();
             }
         },
         moveCardToPrevious(card, currentColumnIndex) {
@@ -263,6 +286,54 @@ new Vue({
                     this.saveCards();
                 }
             }
+        },
+        editCard(cardId) {
+            const cardToEdit = this.cards.find(card => card.id === cardId);
+            if (cardToEdit) {
+                this.editingCardId = cardToEdit.id;
+                this.editingCardTitle = cardToEdit.title;
+                this.editingCardDeadline = cardToEdit.deadline;
+                this.editingCardTasks = cardToEdit.tasks.map(task => task.text); // Загружаем существующие задачи
+                this.showModal = true;
+                this.isEditMode = true;
+            }
+        },
+        updateCard() {
+            const cardIndex = this.cards.findIndex(card => card.id === this.editingCardId);
+            if (cardIndex !== -1) {
+                // Обновляем детали карточки
+                this.cards[cardIndex].title = this.editingCardTitle;
+                this.cards[cardIndex].deadline = this.editingCardDeadline;
+                this.cards[cardIndex].tasks = this.editingCardTasks.map(task => ({ text: task, completed: false })); // Обновляем задачи
+                this.saveCards();
+                this.resetEditingState();
+            }
+        },
+        resetEditingState() {
+            this.editingCardId = null;
+            this.editingCardTitle = '';
+            this.editingCardDeadline = '';
+            this.showModal = false;
+            this.isEditMode = false;
+        },
+        handleSubmit() {
+            if (this.isEditMode) {
+                if (this.validateEditCard()) {
+                    this.updateCard();
+                }
+            } else {
+                if (this.validateNewCard()) {
+                    this.addCard();
+                }
+            }
+        },
+        validateEditCard() {
+            // Ваша логика валидации для редактирования карточки
+            return this.editingCardTitle && this.editingCardDeadline;
+        },
+        validateNewCard() {
+            // Ваша логика валидации для создания новой карточки
+            return this.newCardTitle && this.newCardDeadline;
         }
     },
     mounted() {
@@ -280,19 +351,33 @@ new Vue({
                     <div class="modal-container">
                         <div class="modal-header">
                             <span class="close" @click="showModal = false">&times;</span>
-                            <h3>Создать новую карточку</h3>
+                            <h3>{{ isEditMode ? 'Редактировать карточку' : 'Создать новую карточку' }}</h3>
                         </div>
                         <div class="modal-body">
-                            <input 
-                                type="text" 
-                                v-model="newCardTitle" 
-                                placeholder="Введите название карточки" 
-                            />
-                            <input 
-                                type="datetime-local" 
-                                v-model="newCardDeadline" 
-                                placeholder="Установите дедлайн" 
-                            />
+                            <div v-if="isEditMode">
+                                <input 
+                                    type="text" 
+                                    v-model="editingCardTitle" 
+                                    placeholder="Введите название карточки" 
+                                />
+                                <input 
+                                    type="datetime-local" 
+                                    v-model="editingCardDeadline" 
+                                    placeholder="Установите дедлайн" 
+                                />
+                            </div>
+                            <div v-else>
+                                <input 
+                                    type="text" 
+                                    v-model="newCardTitle" 
+                                    placeholder="Введите название карточки" 
+                                />
+                                <input 
+                                    type="datetime-local" 
+                                    v-model="newCardDeadline" 
+                                    placeholder="Установите дедлайн" 
+                                />
+                            </div>
                             <div>
                                 <input 
                                     type="text" 
@@ -302,13 +387,19 @@ new Vue({
                                 />
                                 <button @click="addNewTask">Добавить задачу</button>
                             </div>
+                            <h3>Существующие задачи:</h3>
                             <ul>
-                                <li v-for="(task, index) in newTasks" :key="index">{{ task }}</li>
+                                <li v-for="(task, index) in (isEditMode ? editingCardTasks : newTasks)" :key="index">
+                                    {{ task }}
+                                    <button @click="removeTask(index)">Удалить</button>
+                                </li>
                             </ul>
                         </div>
                         <div class="modal-footer">
-                            <button @click="addCard">Создать</button>
-                            <button @click="showModal = false">Отмена</button>
+                            <button @click="handleSubmit">
+                                {{ isEditMode ? 'Сохранить изменения' : 'Создать' }}
+                            </button>
+                            <button @click="resetEditingState">Отмена</button>
                         </div>
                     </div>
                 </div>
@@ -327,14 +418,16 @@ new Vue({
                 @move-to-next="moveCardToNext"
                 @move-to-previous="moveCardToPrevious"
                 @delete-card="deleteCard"
+                @edit-card="editCard"
             ></column1>
             <column2 
-                :cards="filteredCards.filter(card => card.moved && !card.finalMoved)" 
+                :cards="filteredCards.filter(card => card.moved && !card.tested)" 
                 @move-to-next="moveCardToNext"
                 @move-to-previous="moveCardToPrevious"
+                @edit-card="editCard"
             ></column2>
             <column3 
-                :cards="filteredCards.filter(card => card.moved && !card.finalMoved)" 
+                :cards="filteredCards.filter(card => card.tested && !card.finalMoved)" 
                 @move-to-next="moveCardToNext"
                 @move-to-previous="moveCardToPrevious"
             ></column3>

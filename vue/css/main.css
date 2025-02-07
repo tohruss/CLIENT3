@@ -42,6 +42,15 @@ button:not(DELITE):disabled{
     background-color: #CD5C5C;
     border: 2px solid #8B0000;
 }
+.EDIT{
+    background-color: #00BFFF;
+    border: 2px solid #1E90FF;
+}
+.EDIT:hover{
+    background-color: #6495ED;
+    border: 2px solid #4169E1;
+}
+
 input{
     padding: 5px;
     margin: 10px;
