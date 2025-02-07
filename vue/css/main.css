@@ -2,10 +2,18 @@
     margin: 0;
     padding: 0;
 }
+body{
+    display: flex;
+    justify-content: center;
+
+    height: 100vh; /* Высота вьюпорта */
+    width: 100vw;  /* Ширина вьюпорта */
+    font-family: "Comic Sans MS", sans-serif;
+    background-image: url('../img/3.jpg');
+}
+
 .app {
     font-family: Arial, sans-serif;
-    margin: 20px;
-    background-color: #D3D3D3;
 
 }
 .navmenu{
@@ -15,17 +23,17 @@
 .navmenu input[type="text"]{
     width: 170px;
 }
-button:not(DELITE){
+button:not(DELITE):not(EDIT){
     color: black;
-    background-color: #98FB98;
-    border: 2px solid #3CB371;
-    border-radius: 10px;
+    background-color: #a3c9a8;
+    border: 2px solid #84b59f;
+    border-radius: 5px;
     padding: 10px;
     margin: 20px;
 }
-button:not(DELITE):hover{
-    background-color: #32CD32;
-    border: 2px solid #228B22;
+button:not(DELITE):not(EDIT):hover{
+    background-color: #84b59f;
+    border: 2px solid #69a297;
 }
 button:not(DELITE):disabled{
     background-color: gray;
@@ -34,7 +42,7 @@ button:not(DELITE):disabled{
 .DELITE{
     background-color: #FA8072;
     border: 2px solid #B22222;
-    border-radius: 10px;
+    border-radius: 5px;
     padding: 10px;
     margin: 20px;
 }
@@ -43,12 +51,12 @@ button:not(DELITE):disabled{
     border: 2px solid #8B0000;
 }
 .EDIT{
-    background-color: #00BFFF;
-    border: 2px solid #1E90FF;
+    background-color: #9DADDF;
+    border: 2px solid #7d8ec4;
 }
 .EDIT:hover{
-    background-color: #6495ED;
-    border: 2px solid #4169E1;
+    background-color: #7d8ec4;
+    border: 2px solid #6171A9;
 }
 
 input{
@@ -59,11 +67,11 @@ input{
 .task-card {
     display: flex;
     flex-direction: column;
-    background-color: #D3D3D3;
-    border: 2px solid #ccc;
-    border-radius: 10px;
+    background-color: rgba(163, 201, 168, .3);;
+    border: 2px solid #50808e;
+    border-radius: 5px;
     padding: 10px;
-    margin: 20px;
+    margin: 10px;
 }
 .task-card  li{
     list-style-type: none;
@@ -76,13 +84,13 @@ input{
 }
 .tables{
     display: flex;
-    justify-content: space-between;
+    gap: 20px;
 }
 .column{
 
     height: 50%;
-    background-color: #696969;
-    border-radius: 10px;
+    background-color: rgba(221, 216, 196, .3);;
+    border-radius: 5px;
 }
 .column >h2{
     display: flex;
@@ -109,7 +117,7 @@ input{
 }
 .modal-container {
     width: 300px;
-    background-color: white;
+    background-color: rgb(221, 216, 196);;
     border-radius: 8px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
     overflow: hidden;
