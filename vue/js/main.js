@@ -1,5 +1,5 @@
 Vue.component('task-card', {
-    props: ['card', 'currentColumnIndex', 'isFirstColumnLocked'],
+    props: ['card', 'currentColumnIndex', 'isFirstColumnLocked', 'fromColumnIndex'],
     template: `
     <div class="task-card">
         <h2>Задача: {{ card.title }}</h2>
@@ -12,17 +12,35 @@ Vue.component('task-card', {
             </li>
         </ul>
         <div>
-            <button  v-if="currentColumnIndex < 2" class="EDIT" @click="$emit('edit-card', card.id)">Редактировать</button>
+            <button v-if="currentColumnIndex !== 3" class="EDIT" @click="$emit('edit-card', card.id)">Редактировать</button>
             <button v-if="currentColumnIndex === 0" class="DELITE" @click="$emit('delete-card', card.id)">Удалить</button>
+            <button v-if="currentColumnIndex === 2" @click="returnToPrevious()">Переместить назад</button>
             <button v-if="currentColumnIndex !== 3" @click="moveToNext()">Переместить вперед</button>
+            <div v-if="card.shouldShowReturnReason && currentColumnIndex === 1">
+                <input type="text" v-model="returnReason" placeholder="Введите причину возврата" />
+                <button @click="submitReturnReason">Добавить причину возврата</button>
+            </div>
         </div>
         <h3 v-if="card.finalMoved && card.lastUpdated" style="font-weight: bold">Выполнено: {{ card.lastUpdated }}</h3>
+        <p v-if="card.returnReason && currentColumnIndex !== 3" style="color: red;">Причина возврата: {{ card.returnReason }}</p>
+        <h4 v-if="currentColumnIndex !== 3">Последнее обновление: {{ card.lastUpdated }}</h4>
+        <h3 v-if="card.finalMoved && card.lastUpdated" style="font-weight: bold">
+            <span v-if="card.isOverdue" style="color: red;">(Просрочено)</span>
+            <span v-else style="color: green;">(Выполнено в срок)</span>
+        </h3>
     </div>
     `,
     data() {
         return {
-            newTask: ''
+            newTask: '',
+            returnReason: ''
         };
+    },
+    computed: {
+        shouldShowReturnReason() {
+            // Показываем поле ввода причины возврата только если карточка перемещается из колонки 2 в колонку 1
+            return  this.currentColumnIndex === 1;
+        }
     },
     methods: {
         addTask() {
@@ -34,10 +52,6 @@ Vue.component('task-card', {
                 this.newTask = '';
                 this.saveTasks();
             }
-        },
-
-        moveToNext() {
-            this.$emit('move-to-next', this.card, this.currentColumnIndex);
         },
         removeTask(index) {
             this.card.tasks.splice(index, 1); // Удаляем задачу по индексу
@@ -62,7 +76,19 @@ Vue.component('task-card', {
 
             localStorage.setItem('cards', JSON.stringify(cards));
         },
-
+        moveToNext() {
+            this.card.lastUpdated = new Date().toLocaleString(); // Обновляем дату последнего изменения
+            this.$emit('move-to-next', this.card, this.currentColumnIndex);
+        },
+        returnToPrevious() {
+            this.card.lastUpdated = new Date().toLocaleString(); // Обновляем дату последнего изменения
+            this.$emit('move-to-previous', this.card, this.currentColumnIndex);
+        },
+        submitReturnReason() {
+            this.card.returnReason = this.returnReason; // Сохраняем причину возврата в карточке
+            this.returnReason = ''; // Сбрасываем поле ввода
+            this.saveTasks(); // Сохраняем изменения в localStorage
+        }
     },
     mounted() {
         const cards = JSON.parse(localStorage.getItem('cards')) || [];
@@ -88,7 +114,6 @@ Vue.component('column1', {
             :currentColumnIndex="0"
             :isFirstColumnLocked="isFirstColumnLocked"
             @move-to-next="moveToNext"
-            @move-to-previous="moveToPrevious"
             @delete-card="$emit('delete-card', $event)"
             @edit-card="$emit('edit-card', $event)"
         ></task-card>
@@ -98,9 +123,6 @@ Vue.component('column1', {
         moveToNext(card, currentColumnIndex) {
             this.$emit('move-to-next', card, currentColumnIndex);
         },
-        moveToPrevious(card, currentColumnIndex) {
-            this.$emit('move-to-previous', card, currentColumnIndex);
-        }
     }
 });
 
@@ -115,7 +137,6 @@ Vue.component('column2', {
             :card="card" 
             :currentColumnIndex="1"
             @move-to-next="moveToNext"
-            @move-to-previous="moveToPrevious"
             @edit-card="$emit('edit-card', $event)"
         ></task-card>
     </div>
@@ -123,9 +144,6 @@ Vue.component('column2', {
     methods: {
         moveToNext(card, currentColumnIndex) {
             this.$emit('move-to-next', card, currentColumnIndex);
-        },
-        moveToPrevious(card, currentColumnIndex) {
-            this.$emit('move-to-previous', card, currentColumnIndex);
         }
     }
 });
@@ -140,7 +158,9 @@ Vue.component('column3', {
             :key="index" 
             :card="card"
             :currentColumnIndex="2"
+            @edit-card="$emit('edit-card', $event)"
             @move-to-next="moveToNext"
+            @move-to-previous="returnToPrevious"
         ></task-card>
     </div>
     `,
@@ -148,11 +168,12 @@ Vue.component('column3', {
         moveToNext(card, currentColumnIndex) {
             this.$emit('move-to-next', card, currentColumnIndex);
         },
-        moveToPrevious(card, currentColumnIndex) {
+        returnToPrevious(card, currentColumnIndex) {
             this.$emit('move-to-previous', card, currentColumnIndex);
         }
     }
 });
+
 
 Vue.component('column4', {
     props: ['cards'],
@@ -166,12 +187,7 @@ Vue.component('column4', {
             :currentColumnIndex="3"
         ></task-card>
     </div>
-    `,
-    methods: {
-        moveToPrevious(card, currentColumnIndex) {
-            this.$emit('move-to-previous', card, currentColumnIndex);
-        }
-    }
+    `
 });
 
 new Vue({
@@ -256,35 +272,44 @@ new Vue({
             const cardIndex = this.cards.indexOf(card);
 
             if (cardIndex !== -1 && currentColumnIndex < 3) {
-                // Устанавливаем флаги для карточки в зависимости от колонки
                 if (currentColumnIndex === 0) {
                     this.cards[cardIndex].moved = true; // Перемещаем в колонку "Задачи в работе"
                 } else if (currentColumnIndex === 1) {
                     this.cards[cardIndex].tested = true; // Перемещаем в колонку "Тестирование"
                 } else if (currentColumnIndex === 2) {
                     this.cards[cardIndex].finalMoved = true; // Перемещаем в колонку "Выполненные задачи"
-                    this.cards[cardIndex].lastUpdated = new Date().toLocaleString(); // Устанавливаем дату завершения
+                    this.cards[cardIndex].finalCompletion = new Date().toLocaleString(); // Устанавливаем дату завершения
+
+                    // Проверяем срок дэдлайна
+                    const deadlineDate = new Date(this.cards[cardIndex].deadline);
+                    const currentDate = new Date();
+                    this.cards[cardIndex].isOverdue = deadlineDate < currentDate; // Устанавливаем статус просроченности
                 }
 
-                // Сохраняем изменения
                 this.saveCards();
             }
         },
         moveCardToPrevious(card, currentColumnIndex) {
+            console.log('Перемещение карточки:', card);
+            console.log('Текущий индекс колонки:', currentColumnIndex);
+
             const cardIndex = this.cards.indexOf(card);
+            console.log('Индекс карточки в массиве:', cardIndex);
 
-            if (cardIndex !== -1 && card.tasks) {
-                const completedTasks = card.tasks.filter(task => task.completed).length;
-                const totalTasks = card.tasks.length;
-
-                if (completedTasks <= totalTasks / 2 && currentColumnIndex > 0) {
-                    card.moved = false;
-                    if (currentColumnIndex === 2) {
-                        card.finalMoved = false;
-                        card.lastUpdated = null;
-                    }
-                    this.saveCards();
+            if (cardIndex !== -1 && currentColumnIndex > 0) {
+                if (currentColumnIndex === 2) {
+                    this.cards[cardIndex].tested = false; // Перемещение обратно в колонку "Задачи в работе"
+                    console.log('Состояние карточки обновлено:', this.cards[cardIndex]);
+                    this.cards[cardIndex].shouldShowReturnReason = true;
+                } else if (currentColumnIndex === 1) {
+                    this.cards[cardIndex].moved = false; // Перемещение обратно в колонку "Запланированные задачи"
+                    console.log('Состояние карточки обновлено:', this.cards[cardIndex]);
                 }
+
+                this.saveCards(); // Сохраняем изменения
+                console.log('Карточки сохранены.');
+            } else {
+                console.log('Не удалось переместить карточку. Условия не выполнены.');
             }
         },
         editCard(cardId) {
@@ -334,7 +359,7 @@ new Vue({
         validateNewCard() {
             // Ваша логика валидации для создания новой карточки
             return this.newCardTitle && this.newCardDeadline;
-        }
+        },
     },
     mounted() {
         const savedCards = JSON.parse(localStorage.getItem('cards'));
@@ -416,20 +441,19 @@ new Vue({
                 :cards="filteredCards.filter(card => !card.moved)" 
                 :isFirstColumnLocked="isFirstColumnLocked" 
                 @move-to-next="moveCardToNext"
-                @move-to-previous="moveCardToPrevious"
                 @delete-card="deleteCard"
                 @edit-card="editCard"
             ></column1>
             <column2 
                 :cards="filteredCards.filter(card => card.moved && !card.tested)" 
                 @move-to-next="moveCardToNext"
-                @move-to-previous="moveCardToPrevious"
                 @edit-card="editCard"
             ></column2>
             <column3 
                 :cards="filteredCards.filter(card => card.tested && !card.finalMoved)" 
                 @move-to-next="moveCardToNext"
                 @move-to-previous="moveCardToPrevious"
+                @edit-card="editCard"
             ></column3>
             <column4 
                 :cards="filteredCards.filter(card => card.finalMoved)"
