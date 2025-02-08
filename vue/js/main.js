@@ -4,23 +4,25 @@ Vue.component('task-card', {
     <div class="task-card">
         <h2>Задача: {{ card.title }}</h2>
         <h3>Дата создания:{{ card.createdDate }}</h3>
-        <h3>Дедлайн: {{ card.deadline }}</h3>
         <h4>Описание задачи:</h4>
         <ul v-if="card.tasks && card.tasks.length > 0">
             <li v-for="(task, index) in card.tasks" :key="index">
-                <p>{{ task.text }}</p>
+                <input :disabled="currentColumnIndex === 3 " type="checkbox" v-model="task.completed" @change="saveTasks()" />
+                    {{ task.text }}
             </li>
         </ul>
-        <div>
-            <button v-if="currentColumnIndex !== 3" class="EDIT" @click="$emit('edit-card', card.id)">Редактировать</button>
+        <div v-if="currentColumnIndex !== 3">
+            <button  class="EDIT" @click="$emit('edit-card', card.id)">Редактировать</button>
             <button v-if="currentColumnIndex === 0" class="DELITE" @click="$emit('delete-card', card.id)">Удалить</button>
             <button v-if="currentColumnIndex === 2" @click="returnToPrevious()">Переместить назад</button>
-            <button v-if="currentColumnIndex !== 3" @click="moveToNext()">Переместить вперед</button>
-            <div v-if="card.shouldShowReturnReason && currentColumnIndex === 1">
-                <input type="text" v-model="returnReason" placeholder="Введите причину возврата" />
-                <button @click="submitReturnReason">Добавить причину возврата</button>
+            <button v-if="currentColumnIndex !== 3 || card.returnReason || !allTasksCompleted" :disabled=" !allTasksCompleted" @click="moveToNext">Переместить вперед</button>
+            <div v-if="shouldShowReturnReason && currentColumnIndex < 2">
+                Введите причину возврата:
+                <input v-model="returnReason" placeholder="Причина возврата" />
+                <button @click="submitReturnReason">Сохранить причину</button>
             </div>
         </div>
+        <h3>Дедлайн: {{ card.deadline }}</h3>
         <h3 v-if="card.finalMoved && card.lastUpdated" style="font-weight: bold">Выполнено: {{ card.lastUpdated }}</h3>
         <p v-if="card.returnReason && currentColumnIndex !== 3" style="color: red;">Причина возврата: {{ card.returnReason }}</p>
         <h4 v-if="currentColumnIndex !== 3">Последнее обновление: {{ card.lastUpdated }}</h4>
@@ -38,15 +40,19 @@ Vue.component('task-card', {
     },
     computed: {
         shouldShowReturnReason() {
-            // Показываем поле ввода причины возврата только если карточка перемещается из колонки 2 в колонку 1
-            return  this.currentColumnIndex === 1;
+            // Используем значение shouldShowReturnReason из карточки
+            return this.card.shouldShowReturnReason;
+        },
+        allTasksCompleted() {
+            // Check if all tasks are completed
+            return this.card.tasks.every(task => task.completed);
         }
     },
     methods: {
         addTask() {
             if (this.newTask) {
                 if (!this.card.tasks) {
-                    this.card.tasks = []; // Инициализация tasks, если он undefined
+                    this.card.tasks = [];
                 }
                 this.card.tasks.push({ text: this.newTask, completed: false });
                 this.newTask = '';
@@ -54,18 +60,16 @@ Vue.component('task-card', {
             }
         },
         removeTask(index) {
-            this.card.tasks.splice(index, 1); // Удаляем задачу по индексу
-            this.saveTasks(); // Сохраняем изменения в localStorage
+            this.card.tasks.splice(index, 1);
+            this.saveTasks();
         },
         saveTasks() {
             const cards = JSON.parse(localStorage.getItem('cards')) || [];
-            const cardIndex = cards.findIndex(c => c.id === this.card.id); // Ищем карточку по id
-
-            // Сохраняем актуальные данные с состоянием задач
+            const cardIndex = cards.findIndex(c => c.id === this.card.id);
             if (cardIndex !== -1) {
                 cards[cardIndex] = {
                     ...this.card,
-                    tasks: this.card.tasks.map(task => ({ ...task })) // Глубокая копия задач
+                    tasks: this.card.tasks.map(task => ({ ...task }))
                 };
             } else {
                 cards.push({
@@ -73,31 +77,30 @@ Vue.component('task-card', {
                     tasks: this.card.tasks.map(task => ({ ...task }))
                 });
             }
-
             localStorage.setItem('cards', JSON.stringify(cards));
         },
         moveToNext() {
-            this.card.lastUpdated = new Date().toLocaleString(); // Обновляем дату последнего изменения
+            this.card.lastUpdated = new Date().toLocaleString();
             this.$emit('move-to-next', this.card, this.currentColumnIndex);
         },
         returnToPrevious() {
-            this.card.lastUpdated = new Date().toLocaleString(); // Обновляем дату последнего изменения
+            this.card.lastUpdated = new Date().toLocaleString();
             this.$emit('move-to-previous', this.card, this.currentColumnIndex);
         },
         submitReturnReason() {
-            this.card.returnReason = this.returnReason; // Сохраняем причину возврата в карточке
-            this.returnReason = ''; // Сбрасываем поле ввода
-            this.saveTasks(); // Сохраняем изменения в localStorage
+            this.card.returnReason = this.returnReason;
+            this.returnReason = '';
+            this.card.shouldShowReturnReason = false;
+            this.saveTasks();
         }
     },
     mounted() {
         const cards = JSON.parse(localStorage.getItem('cards')) || [];
-        const savedCard = cards.find(c => c.id === this.card.id); // Ищем сохранённую карточку по id
-
+        const savedCard = cards.find(c => c.id === this.card.id);
         if (savedCard && savedCard.tasks) {
-            this.card.tasks = savedCard.tasks.map(task => ({ ...task })); // Глубокая копия задач
+            this.card.tasks = savedCard.tasks.map(task => ({ ...task }));
         } else {
-            this.card.tasks = []; // Инициализация пустого массива задач
+            this.card.tasks = [];
         }
     }
 });
@@ -290,26 +293,18 @@ new Vue({
             }
         },
         moveCardToPrevious(card, currentColumnIndex) {
-            console.log('Перемещение карточки:', card);
-            console.log('Текущий индекс колонки:', currentColumnIndex);
-
             const cardIndex = this.cards.indexOf(card);
-            console.log('Индекс карточки в массиве:', cardIndex);
-
             if (cardIndex !== -1 && currentColumnIndex > 0) {
                 if (currentColumnIndex === 2) {
-                    this.cards[cardIndex].tested = false; // Перемещение обратно в колонку "Задачи в работе"
-                    console.log('Состояние карточки обновлено:', this.cards[cardIndex]);
-                    this.cards[cardIndex].shouldShowReturnReason = true;
+                    // Перемещение из колонки "Тестирование" обратно в колонку "Задачи в работе"
+                    this.cards[cardIndex].tested = false;
+                    this.cards[cardIndex].shouldShowReturnReason = true; // Показываем поле причины возврата
                 } else if (currentColumnIndex === 1) {
-                    this.cards[cardIndex].moved = false; // Перемещение обратно в колонку "Запланированные задачи"
-                    console.log('Состояние карточки обновлено:', this.cards[cardIndex]);
+                    // Перемещение из колонки "Задачи в работе" обратно в колонку "Запланированные задачи"
+                    this.cards[cardIndex].moved = false;
+                    this.cards[cardIndex].shouldShowReturnReason = false; // Скрываем поле причины возврата
                 }
-
                 this.saveCards(); // Сохраняем изменения
-                console.log('Карточки сохранены.');
-            } else {
-                console.log('Не удалось переместить карточку. Условия не выполнены.');
             }
         },
         editCard(cardId) {
@@ -327,12 +322,29 @@ new Vue({
         updateCard() {
             const cardIndex = this.cards.findIndex(card => card.id === this.editingCardId);
             if (cardIndex !== -1) {
-                // Обновляем детали карточки
+                // Сохраняем старые задачи с их состоянием `completed`
+                const existingTasksMap = {};
+                this.cards[cardIndex].tasks.forEach(task => {
+                    existingTasksMap[task.text] = task.completed; // Сохраняем связь "текст задачи -> её состояние"
+                });
+
+                // Обновляем задачи, сохраняя их состояние `completed`
+                this.cards[cardIndex].tasks = this.editingCardTasks.map(taskText => {
+                    return {
+                        text: taskText,
+                        completed: existingTasksMap[taskText] ?? false // Используем сохраненное состояние или `false`, если задача новая
+                    };
+                });
+
+                // Обновляем остальные поля карточки
                 this.cards[cardIndex].title = this.editingCardTitle;
                 this.cards[cardIndex].deadline = this.editingCardDeadline;
-                this.cards[cardIndex].tasks = this.editingCardTasks.map(task => ({ text: task, completed: false })); // Обновляем задачи
                 this.cards[cardIndex].lastUpdated = new Date().toLocaleString();
+
+                // Сохраняем изменения в localStorage
                 this.saveCards();
+
+                // Сбрасываем состояние редактирования
                 this.resetEditingState();
             }
         },

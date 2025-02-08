@@ -5,9 +5,6 @@
 body{
     display: flex;
     justify-content: center;
-
-    height: 100vh; /* Высота вьюпорта */
-    width: 100vw;  /* Ширина вьюпорта */
     font-family: "Comic Sans MS", sans-serif;
     background-image: url('../img/3.jpg');
 }
