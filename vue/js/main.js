@@ -321,6 +321,7 @@ new Vue({
                 this.editingCardTasks = cardToEdit.tasks.map(task => task.text); // Загружаем существующие задачи
                 this.showModal = true;
                 this.isEditMode = true;
+                this.lastUpdated = new Date().toLocaleString();
             }
         },
         updateCard() {
@@ -330,6 +331,7 @@ new Vue({
                 this.cards[cardIndex].title = this.editingCardTitle;
                 this.cards[cardIndex].deadline = this.editingCardDeadline;
                 this.cards[cardIndex].tasks = this.editingCardTasks.map(task => ({ text: task, completed: false })); // Обновляем задачи
+                this.cards[cardIndex].lastUpdated = new Date().toLocaleString();
                 this.saveCards();
                 this.resetEditingState();
             }
