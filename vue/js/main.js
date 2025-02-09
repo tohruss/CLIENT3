@@ -2,24 +2,25 @@ Vue.component('task-card', {
     props: ['card', 'currentColumnIndex', 'isFirstColumnLocked', 'fromColumnIndex'],
     template: `
     <div class="task-card">
+        <p>{{ getPriorityText(card.isPriority) }}</p>
         <h2>Задача: {{ card.title }}</h2>
         <h3>Дата создания:{{ card.createdDate }}</h3>
         <h4>Описание задачи:</h4>
         <ul v-if="card.tasks && card.tasks.length > 0">
             <li v-for="(task, index) in card.tasks" :key="index">
-                <input :disabled="currentColumnIndex === 3 " type="checkbox" v-model="task.completed" @change="saveTasks()" />
+                <input :disabled="currentColumnIndex === 3 || (isAnyPriorityCardActive && !card.isPriority)" type="checkbox" v-model="task.completed" @change="saveTasks()" />
                     {{ task.text }}
             </li>
         </ul>
         <div v-if="currentColumnIndex !== 3">
-            <button  class="EDIT" @click="$emit('edit-card', card.id)">Редактировать</button>
-            <button v-if="currentColumnIndex === 0" class="DELITE" @click="$emit('delete-card', card.id)">Удалить</button>
-            <button v-if="currentColumnIndex === 2" @click="returnToPrevious()">Переместить назад</button>
-            <button v-if="currentColumnIndex !== 3 || card.returnReason || !allTasksCompleted" :disabled=" !allTasksCompleted" @click="moveToNext">Переместить вперед</button>
+            <button :disabled="isAnyPriorityCardActive && !card.isPriority" class="EDIT" @click="$emit('edit-card', card.id)">Редактировать</button>
+            <button v-if="currentColumnIndex === 0" :disabled="isAnyPriorityCardActive && !card.isPriority" class="DELITE" @click="$emit('delete-card', card.id)">Удалить</button>
+            <button v-if="currentColumnIndex === 2" @click="returnToPrevious" :disabled="isAnyPriorityCardActive && !card.isPriority">Переместить назад</button>
+            <button v-if="currentColumnIndex !== 3 || card.returnReason || !allTasksCompleted" :disabled="!allTasksCompleted || (isAnyPriorityCardActive && !card.isPriority)" @click="moveToNext">Переместить вперед</button>
             <div v-if="shouldShowReturnReason && currentColumnIndex < 2">
                 Введите причину возврата:
-                <input v-model="returnReason" placeholder="Причина возврата" />
-                <button @click="submitReturnReason">Сохранить причину</button>
+                <input v-model="returnReason" placeholder="Причина возврата" :disabled="isAnyPriorityCardActive && !card.isPriority" />
+                <button @click="submitReturnReason" :disabled="isAnyPriorityCardActive && !card.isPriority">Сохранить причину</button>
             </div>
         </div>
         <h3>Дедлайн: {{ card.deadline }}</h3>
@@ -40,12 +41,20 @@ Vue.component('task-card', {
     },
     computed: {
         shouldShowReturnReason() {
-            // Используем значение shouldShowReturnReason из карточки
             return this.card.shouldShowReturnReason;
         },
         allTasksCompleted() {
-            // Check if all tasks are completed
             return this.card.tasks.every(task => task.completed);
+        },
+        isAnyPriorityCardActive() {
+            return this.cards && this.cards.some(card => card.isPriority && !card.finalMoved);
+        },
+        isMoveDisabled() {
+            const higherPriorityExists = this.allCards && this.allCards.some(c =>
+                c.priority < this.card.priority && currentColumnIndex !==3
+            );
+
+            return higherPriorityExists;
         }
     },
     methods: {
@@ -79,11 +88,11 @@ Vue.component('task-card', {
             }
             localStorage.setItem('cards', JSON.stringify(cards));
         },
-        moveToNext() {
+        moveToNext(card) {
             this.card.lastUpdated = new Date().toLocaleString();
             this.$emit('move-to-next', this.card, this.currentColumnIndex);
         },
-        returnToPrevious() {
+        returnToPrevious(card) {
             this.card.lastUpdated = new Date().toLocaleString();
             this.$emit('move-to-previous', this.card, this.currentColumnIndex);
         },
@@ -92,7 +101,10 @@ Vue.component('task-card', {
             this.returnReason = '';
             this.card.shouldShowReturnReason = false;
             this.saveTasks();
-        }
+        },
+        getPriorityText(priority) {
+            return priority ? "Приоритетная карточка " : "Обычная карточка";
+        },
     },
     mounted() {
         const cards = JSON.parse(localStorage.getItem('cards')) || [];
@@ -205,20 +217,45 @@ new Vue({
             showModal: false,
             newTaskText: '',
             newCardDeadline: '',
-            editingCardId: null, // для отслеживания редактируемой карточки
-            editingCardTitle: "", // для сохранения названия редактируемой карточки
-            editingCardDeadline: "", // для сохранения срока действия редактируемой карточки
+            editingCardId: null,
+            editingCardTitle: "",
+            editingCardDeadline: "",
             editingCardTasks: [],
-            isEditMode: false
+            isEditMode: false,
+            editingCardIsPriority: false
         };
     },
     computed: {
         filteredCards() {
             const query = this.searchQuery.toLowerCase();
             return this.cards.filter(card => card.title.toLowerCase().includes(query));
+        },
+        isAnyPriorityCardActive() {
+            return this.cards.some(card => card.isPriority && !card.finalMoved);
         }
     },
     methods: {
+        setPriority(card) {
+            const columnIndex = this.columns.findIndex(column => column.cards.includes(card));
+
+            if (columnIndex === 2) {
+                card.isPriority = false;
+                this.priorityCard = null;
+            } else {
+                if (this.priorityCard === card) {
+                    card.isPriority = false;
+                    this.priorityCard = null;
+                } else {
+                    if (this.priorityCard) {
+                        this.priorityCard.isPriority = false;
+                    }
+                    card.isPriority = true;
+                    this.priorityCard = card;
+                }
+            }
+
+            this.saveCards();
+        },
         addCard() {
             if (this.newCardTitle.trim()) {
                 const card = {
@@ -230,15 +267,17 @@ new Vue({
                     lastUpdated: null,
                     tested: false,
                     createdDate: new Date().toLocaleString(),
-                    deadline: this.newCardDeadline // Добавляем дедлайн
+                    deadline: this.newCardDeadline,
+                    isPriority: this.editingCardIsPriority // Устанавливаем приоритет
                 };
 
                 this.cards.push(card);
                 this.newCardTitle = '';
                 this.newTasks = [];
                 this.saveCards();
-                this.newCardDeadline = ''; // Сброс поля дедлайна
+                this.newCardDeadline = '';
                 this.showModal = false;
+                this.editingCardIsPriority = false; // Сбрасываем приоритет после создания
             } else {
                 alert('Введите название карточки.');
             }
@@ -246,22 +285,19 @@ new Vue({
         addNewTask() {
             if (this.newTaskText.trim()) {
                 if (this.isEditMode) {
-                    this.editingCardTasks.push(this.newTaskText); // Добавляем новую задачу в массив редактируемой карточки
+                    this.editingCardTasks.push(this.newTaskText);
                 } else {
-                    this.newTasks.push(this.newTaskText); // Добавляем новую задачу в массив новой карточки
+                    this.newTasks.push(this.newTaskText);
                 }
-                this.newTaskText = ''; // Сбрасываем поле ввода
+                this.newTaskText = '';
             }
         },
         removeTask(index) {
             if (this.isEditMode) {
-                this.editingCardTasks.splice(index, 1); // Удаляем задачу по индексу из редактируемого списка
+                this.editingCardTasks.splice(index, 1);
             } else {
-                this.newTasks.splice(index, 1); // Удаляем задачу по индексу
+                this.newTasks.splice(index, 1);
             }
-        },
-        saveCards() {
-            localStorage.setItem('cards', JSON.stringify(this.cards));
         },
         deleteAllCards() {
             this.cards = [];
@@ -272,79 +308,93 @@ new Vue({
             this.saveCards();
         },
         moveCardToNext(card, currentColumnIndex) {
-            const cardIndex = this.cards.indexOf(card);
+            if (this.isAnyPriorityCardActive && !card.isPriority) {
+                alert('Перемещение заблокировано. Сначала завершите приоритетную задачу.');
+                return;
+            }
 
+            const cardIndex = this.cards.indexOf(card);
             if (cardIndex !== -1 && currentColumnIndex < 3) {
                 if (currentColumnIndex === 0) {
-                    this.cards[cardIndex].moved = true; // Перемещаем в колонку "Задачи в работе"
+                    this.cards[cardIndex].moved = true;
                 } else if (currentColumnIndex === 1) {
-                    this.cards[cardIndex].tested = true; // Перемещаем в колонку "Тестирование"
+                    this.cards[cardIndex].tested = true;
                 } else if (currentColumnIndex === 2) {
-                    this.cards[cardIndex].finalMoved = true; // Перемещаем в колонку "Выполненные задачи"
-                    this.cards[cardIndex].finalCompletion = new Date().toLocaleString(); // Устанавливаем дату завершения
-
-                    // Проверяем срок дэдлайна
+                    this.cards[cardIndex].finalMoved = true;
+                    this.cards[cardIndex].finalCompletion = new Date().toLocaleString();
                     const deadlineDate = new Date(this.cards[cardIndex].deadline);
                     const currentDate = new Date();
-                    this.cards[cardIndex].isOverdue = deadlineDate < currentDate; // Устанавливаем статус просроченности
+                    this.cards[cardIndex].isOverdue = deadlineDate < currentDate;
                 }
-
                 this.saveCards();
             }
         },
         moveCardToPrevious(card, currentColumnIndex) {
+            // Проверяем, есть ли активные приоритетные карточки
+            if (this.isAnyPriorityCardActive && !card.isPriority) {
+                alert('Перемещение назад заблокировано. Сначала завершите приоритетную задачу.');
+                return;
+            }
+
             const cardIndex = this.cards.indexOf(card);
+
+            // Убеждаемся, что карточка существует и находится не в первой колонке
             if (cardIndex !== -1 && currentColumnIndex > 0) {
                 if (currentColumnIndex === 2) {
-                    // Перемещение из колонки "Тестирование" обратно в колонку "Задачи в работе"
-                    this.cards[cardIndex].tested = false;
-                    this.cards[cardIndex].shouldShowReturnReason = true; // Показываем поле причины возврата
+                    // Если карточка в третьей колонке ("Тестирование")
+                    this.cards[cardIndex].tested = false; // Сбрасываем флаг тестирования
+                    this.cards[cardIndex].shouldShowReturnReason = true; // Показываем поле для причины возврата
                 } else if (currentColumnIndex === 1) {
-                    // Перемещение из колонки "Задачи в работе" обратно в колонку "Запланированные задачи"
-                    this.cards[cardIndex].moved = false;
-                    this.cards[cardIndex].shouldShowReturnReason = false; // Скрываем поле причины возврата
+                    // Если карточка во второй колонке ("Задачи в работе")
+                    this.cards[cardIndex].moved = false; // Сбрасываем флаг перемещения
+                    this.cards[cardIndex].shouldShowReturnReason = false; // Скрываем поле для причины возврата
                 }
-                this.saveCards(); // Сохраняем изменения
+
+                // Сохраняем изменения
+                this.saveCards();
             }
         },
+        saveCards() {
+            localStorage.setItem('cards', JSON.stringify(this.cards));
+        },
         editCard(cardId) {
+            if (this.isAnyPriorityCardActive && !this.cards.find(card => card.id === cardId)?.isPriority) {
+                alert('Редактирование заблокировано. Сначала завершите приоритетную задачу.');
+                return;
+            }
             const cardToEdit = this.cards.find(card => card.id === cardId);
             if (cardToEdit) {
                 this.editingCardId = cardToEdit.id;
                 this.editingCardTitle = cardToEdit.title;
                 this.editingCardDeadline = cardToEdit.deadline;
-                this.editingCardTasks = cardToEdit.tasks.map(task => task.text); // Загружаем существующие задачи
+                this.editingCardTasks = cardToEdit.tasks.map(task => task.text);
                 this.showModal = true;
                 this.isEditMode = true;
                 this.lastUpdated = new Date().toLocaleString();
+                this.editingCardIsPriority = cardToEdit.isPriority;
             }
         },
         updateCard() {
             const cardIndex = this.cards.findIndex(card => card.id === this.editingCardId);
             if (cardIndex !== -1) {
-                // Сохраняем старые задачи с их состоянием `completed`
                 const existingTasksMap = {};
                 this.cards[cardIndex].tasks.forEach(task => {
-                    existingTasksMap[task.text] = task.completed; // Сохраняем связь "текст задачи -> её состояние"
+                    existingTasksMap[task.text] = task.completed;
                 });
 
-                // Обновляем задачи, сохраняя их состояние `completed`
                 this.cards[cardIndex].tasks = this.editingCardTasks.map(taskText => {
                     return {
                         text: taskText,
-                        completed: existingTasksMap[taskText] ?? false // Используем сохраненное состояние или `false`, если задача новая
+                        completed: existingTasksMap[taskText] ?? false
                     };
                 });
 
-                // Обновляем остальные поля карточки
                 this.cards[cardIndex].title = this.editingCardTitle;
                 this.cards[cardIndex].deadline = this.editingCardDeadline;
                 this.cards[cardIndex].lastUpdated = new Date().toLocaleString();
+                this.cards[cardIndex].isPriority = this.editingCardIsPriority; // Сохраняем приоритет
 
-                // Сохраняем изменения в localStorage
                 this.saveCards();
-
-                // Сбрасываем состояние редактирования
                 this.resetEditingState();
             }
         },
@@ -367,11 +417,9 @@ new Vue({
             }
         },
         validateEditCard() {
-            // Ваша логика валидации для редактирования карточки
             return this.editingCardTitle && this.editingCardDeadline;
         },
         validateNewCard() {
-            // Ваша логика валидации для создания новой карточки
             return this.newCardTitle && this.newCardDeadline;
         },
     },
@@ -393,6 +441,10 @@ new Vue({
                             <h3>{{ isEditMode ? 'Редактировать карточку' : 'Создать новую карточку' }}</h3>
                         </div>
                         <div class="modal-body">
+                            <label>
+                                <input type="checkbox" v-model="editingCardIsPriority" />
+                                Установить приоритет
+                            </label>
                             <div v-if="isEditMode">
                                 <input 
                                     type="text" 
@@ -457,11 +509,13 @@ new Vue({
                 @move-to-next="moveCardToNext"
                 @delete-card="deleteCard"
                 @edit-card="editCard"
+                @move-to-previous="moveCardToPrevious"
             ></column1>
             <column2 
                 :cards="filteredCards.filter(card => card.moved && !card.tested)" 
                 @move-to-next="moveCardToNext"
                 @edit-card="editCard"
+                @move-to-previous="moveCardToPrevious"
             ></column2>
             <column3 
                 :cards="filteredCards.filter(card => card.tested && !card.finalMoved)" 
